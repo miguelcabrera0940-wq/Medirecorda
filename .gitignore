@@ -1,0 +1,18 @@
+# Credenciales
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Dependencias
+node_modules/
+
+# Compilaciones
+dist/
+build/
+coverage/
+
+# Archivos temporales
+*.log
+.DS_Store
