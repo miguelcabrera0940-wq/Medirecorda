@@ -81,14 +81,15 @@ export function crearServicios({ repositorio, externos = null }) {
     },
 
     // Con la sesión del usuario: incluye sus consultas restantes y cuándo podrá volver a consultar.
-    async estadoAyuda(usuarioId) {
-      return externos.ia.estado(usuarioId);
+    async estadoAyuda(_usuarioId) {
+      return externos.ia.estado(repositorio.ia);
     },
 
     // Explicación de un término general con Gemini. Solo viaja el término escrito.
-    async explicarTermino(usuarioId, cuerpo) {
+    // La cuota es la del token de la sesión: la base de datos la aplica con auth.uid().
+    async explicarTermino(_usuarioId, cuerpo) {
       const { termino, idioma } = validar.soloClaves(cuerpo, ['termino', 'idioma']);
-      return externos.ia.explicar(usuarioId, termino, idioma);
+      return externos.ia.explicar(termino, idioma, repositorio.ia);
     },
 
     async listarTomas(usuarioId, consulta) {

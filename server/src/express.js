@@ -1,5 +1,4 @@
 // Adaptador de Express: traduce cada petición al manejador independiente del framework.
-// AVISO: este archivo aún no se ha ejecutado. Requiere instalar express (pendiente de autorización).
 import express from 'express';
 
 export function crearServidorExpress(manejar) {

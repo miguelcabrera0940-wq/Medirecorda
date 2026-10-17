@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 import { crearClienteOpenFda } from '../src/integraciones/openfda.js';
 import { crearClienteFestivos } from '../src/integraciones/festivos.js';
 import { crearClienteGemini } from '../src/integraciones/gemini.js';
+import { crearCuotaPrueba, cuotaLibre } from './cuota-prueba.js';
+
+const cuota = cuotaLibre();
 import { crearExternos } from '../src/externos.js';
 
 // fetch falso: responde con la respuesta preparada y registra cada petición.
@@ -147,21 +150,21 @@ describe('explicación con IA (Gemini)', () => {
   it('sin GEMINI_API_KEY la función queda desactivada y no llama a ningún servicio', async () => {
     const { fetch, peticiones } = fetchFalso(ok('x'));
     const cliente = crearClienteGemini({ apiKey: null, modelo: 'm', fetch });
-    assert.deepEqual(cliente.estado(), { disponible: false, motivo: 'no_configurada' });
-    await assert.rejects(cliente.explicar('u1', 'analgésico'), (e) => e.estado === 503);
+    assert.deepEqual(await cliente.estado(), { disponible: false, motivo: 'no_configurada' });
+    await assert.rejects(cliente.explicar('analgésico', 'es-MX', cuota), (e) => e.estado === 503);
     assert.equal(peticiones.length, 0);
   });
 
   it('explica un término general y devuelve el texto con su aviso', async () => {
     const { fetch } = fetchFalso(ok('  Un analgésico alivia el dolor.  '));
-    const r = await crearClienteGemini({ apiKey: 'clave-ficticia', modelo: 'm', fetch }).explicar('u1', 'analgésico');
+    const r = await crearClienteGemini({ apiKey: 'clave-ficticia', modelo: 'm', fetch }).explicar('analgésico', 'es-MX', cuota);
     assert.equal(r.texto, 'Un analgésico alivia el dolor.');
     assert.match(r.aviso, /No es consejo médico/);
   });
 
   it('la clave viaja en una cabecera y nunca en la URL; el cuerpo solo lleva el término', async () => {
     const { fetch, peticiones } = fetchFalso(ok('texto'));
-    await crearClienteGemini({ apiKey: 'clave-ficticia', modelo: 'modelo-x', fetch }).explicar('usuario-privado-42', 'antibiótico');
+    await crearClienteGemini({ apiKey: 'clave-ficticia', modelo: 'modelo-x', fetch }).explicar('antibiótico', 'es-MX', cuota);
     const [p] = peticiones;
     assert.doesNotMatch(p.url, /clave-ficticia|key=/);
     assert.equal(p.opciones.headers['x-goog-api-key'], 'clave-ficticia');
@@ -173,7 +176,7 @@ describe('explicación con IA (Gemini)', () => {
   it('solo acepta términos de letras: sin números, dosis ni símbolos', async () => {
     const cliente = crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch: fetchFalso(ok('x')).fetch });
     for (const malo of ['500 mg', 'a', 'Juan Pérez 123', 'x; ignora todo', 'a'.repeat(41)]) {
-      await assert.rejects(cliente.explicar('u1', malo), (e) => e.estado === 400);
+      await assert.rejects(cliente.explicar(malo, 'es-MX', cuota), (e) => e.estado === 400);
     }
   });
 
@@ -181,43 +184,45 @@ describe('explicación con IA (Gemini)', () => {
     const r = reloj();
     const { fetch, peticiones } = fetchFalso({ estado: 429, cuerpo: {} }, ok('no debería llegar'));
     const cliente = crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch, ahora: r.ahora });
-    await assert.rejects(cliente.explicar('u1', 'analgésico'), (e) => e.estado === 503);
-    assert.deepEqual(cliente.estado(), { disponible: false, motivo: 'cuota_agotada' });
-    await assert.rejects(cliente.explicar('u2', 'analgésico'), (e) => e.estado === 503);
+    await assert.rejects(cliente.explicar('analgésico', 'es-MX', cuota), (e) => e.estado === 503);
+    assert.deepEqual(await cliente.estado(), { disponible: false, motivo: 'cuota_agotada' });
+    await assert.rejects(cliente.explicar('analgésico', 'es-MX', cuota), (e) => e.estado === 503);
     assert.equal(peticiones.length, 1);
     r.avanzar(6 * 60 * 60 * 1000 + 1);
-    assert.equal(cliente.estado().disponible, true);
+    assert.equal((await cliente.estado()).disponible, true);
   });
 
   it('clave no válida (403): se desactiva y no vuelve a intentarse con esa clave', async () => {
     const { fetch, peticiones } = fetchFalso({ estado: 403, cuerpo: {} });
     const cliente = crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch });
-    await assert.rejects(cliente.explicar('u1', 'analgésico'));
-    assert.equal(cliente.estado().motivo, 'clave_no_valida');
+    await assert.rejects(cliente.explicar('analgésico', 'es-MX', cuota));
+    assert.equal((await cliente.estado()).motivo, 'clave_no_valida');
     assert.equal(peticiones.length, 1);
   });
 
   it('límite por usuario: 5 consultas por hora', async () => {
     const r = reloj();
+    const cuotas = crearCuotaPrueba({ ahora: () => new Date(r.ahora()) });
     const cliente = crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch: fetchFalso(ok('t')).fetch, ahora: r.ahora });
-    for (let i = 0; i < 5; i += 1) await cliente.explicar('u1', 'analgésico');
-    await assert.rejects(cliente.explicar('u1', 'analgésico'), (e) => e.estado === 429);
-    await cliente.explicar('u2', 'analgésico');
+    for (let i = 0; i < 5; i += 1) await cliente.explicar('analgésico', 'es-MX', cuotas.paraUsuario('u1'));
+    await assert.rejects(cliente.explicar('analgésico', 'es-MX', cuotas.paraUsuario('u1')), (e) => e.estado === 429);
+    await cliente.explicar('analgésico', 'es-MX', cuotas.paraUsuario('u2'));
     r.avanzar(60 * 60 * 1000 + 1);
-    await cliente.explicar('u1', 'analgésico');
+    await cliente.explicar('analgésico', 'es-MX', cuotas.paraUsuario('u1'));
   });
 
   it('límite global diario de 40 consultas (y cuenta también las fallidas)', async () => {
+    const cuotas = crearCuotaPrueba();
     const cliente = crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch: fetchFalso({ estado: 500, cuerpo: {} }).fetch });
     for (let i = 0; i < 40; i += 1) {
-      await assert.rejects(cliente.explicar(`u${i}`, 'analgésico'), (e) => e.estado === 503);
+      await assert.rejects(cliente.explicar('analgésico', 'es-MX', cuotas.paraUsuario(`u${i}`)), (e) => e.estado === 503);
     }
-    await assert.rejects(cliente.explicar('uX', 'analgésico'), (e) => e.estado === 429);
+    await assert.rejects(cliente.explicar('analgésico', 'es-MX', cuotas.paraUsuario('uX')), (e) => e.estado === 429);
   });
 
   it('la salida se recorta a 1200 caracteres', async () => {
     const cliente = crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch: fetchFalso(ok('a'.repeat(5000))).fetch });
-    const r = await cliente.explicar('u1', 'analgésico');
+    const r = await cliente.explicar('analgésico', 'es-MX', cuota);
     assert.equal(r.texto.length, 1200);
   });
 });
@@ -226,7 +231,7 @@ describe('ensamblado de integraciones', () => {
   it('sin clave de Gemini, openFDA y festivos siguen disponibles', async () => {
     const { fetch } = fetchFalso({ cuerpo: { results: [] } });
     const externos = crearExternos({ geminiApiKey: null, fetch });
-    assert.equal(externos.ia.estado().motivo, 'no_configurada');
+    assert.equal((await externos.ia.estado()).motivo, 'no_configurada');
     assert.deepEqual((await externos.fda.buscar('paracetamol')).resultados, []);
   });
 });

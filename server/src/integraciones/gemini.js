@@ -16,12 +16,8 @@ const MAX_TEXTO_SALIDA = 1200;
 const UNA_HORA_MS = 60 * 60 * 1000;
 const SEIS_HORAS_MS = 6 * UNA_HORA_MS;
 const VEINTICUATRO_HORAS_MS = 24 * UNA_HORA_MS;
+// 5 por usuario por hora y 40 al día: los aplica Supabase (reservar_consulta_ia), compartido por todas las instancias.
 const LIMITE_POR_USUARIO_HORA = 5;
-const LIMITE_GLOBAL_DIA = 40;
-
-// Momento en que vuelve a quedar libre un cupo: una hora después de la consulta más antigua de la ventana.
-const reintentoDe = (recientes) => new Date(Math.min(...recientes) + UNA_HORA_MS).toISOString();
-const fechaDe = (ahoraMs) => new Date(ahoraMs).toISOString().slice(0, 10);
 const IDIOMA_PREDETERMINADO = 'es-MX';
 
 // Modelo por defecto y modelos retirados para nuevos usuarios (Google responde 404 para ellos).
@@ -158,70 +154,55 @@ export function crearClienteGemini({ apiKey = null, modelo = MODELO_PREDETERMINA
   }
   let pausaHasta = 0;
   let motivoPausa = null;
-  const consultasPorUsuario = new Map(); // Solo en memoria: no se envía a Google.
-  let contadorDia = { fecha: '', consultas: 0 };
 
   function pausar(duracionMs, motivo) {
     pausaHasta = ahora() + duracionMs;
     motivoPausa = motivo;
   }
 
-  // Ventana de consultas de un usuario: solo las de la última hora. Reutiliza el mismo control de explicar().
-  function ventanaUsuario(usuarioId, ahoraMs) {
-    return (consultasPorUsuario.get(usuarioId) ?? []).filter((t) => ahoraMs - t < UNA_HORA_MS);
+  // Disponibilidad de la función (clave y pausas por respuesta de Google). Síncrona: no consulta la base de datos.
+  function disponibilidad() {
+    if (!apiKey) return { disponible: false, motivo: 'no_configurada' };
+    if (pausaHasta > ahora()) return { disponible: false, motivo: motivoPausa };
+    return { disponible: true, motivo: null };
+  }
+
+  // Operación sobre la cuota compartida. Si falla, se responde 503 y no se llama a Gemini (falla cerrado).
+  async function ejecutarCuota(operacion) {
+    try {
+      return await operacion();
+    } catch (fallo) {
+      console.error(`[gemini] fallo de cuota: ${sanearDiagnostico(fallo?.name, apiKey)}`);
+      throw new ErrorApp(503, 'ia_no_disponible', NO_DISPONIBLE);
+    }
   }
 
   // Estado para la interfaz. Solo códigos y cifras; nunca la clave ni detalles de configuración.
-  // Con usuarioId (de la sesión autenticada), incluye el límite personal de esa cuenta.
-  function estado(usuarioId = null) {
-    let base;
-    if (!apiKey) base = { disponible: false, motivo: 'no_configurada' };
-    else if (pausaHasta > ahora()) base = { disponible: false, motivo: motivoPausa };
-    else base = { disponible: true, motivo: null };
-    if (usuarioId === null) return base;
-
-    const ahoraMs = ahora();
-    const recientes = ventanaUsuario(usuarioId, ahoraMs);
-    const restantes = Math.max(0, LIMITE_POR_USUARIO_HORA - recientes.length);
-    const diarioAgotado = contadorDia.fecha === fechaDe(ahoraMs) && contadorDia.consultas >= LIMITE_GLOBAL_DIA;
+  // Con `cuota` (ligada a la sesión autenticada), incluye el límite personal y el diario.
+  async function estado(cuota = null) {
+    const base = disponibilidad();
+    if (cuota === null) return base;
+    const cupo = await ejecutarCuota(() => cuota.estado());
     return {
       ...base,
-      limite: {
-        maximo: LIMITE_POR_USUARIO_HORA,
-        restantes,
-        reintentoEn: restantes === 0 ? reintentoDe(recientes) : null,
-        diarioAgotado,
-      },
+      limite: { maximo: LIMITE_POR_USUARIO_HORA, restantes: cupo.restantes, reintentoEn: cupo.reintentoEn, diarioAgotado: cupo.diarioAgotado },
     };
   }
 
-  async function explicar(usuarioId, termino, idioma) {
+  async function explicar(termino, idioma, cuota) {
     // Validación de entrada primero: no gasta cuota ni revela el estado de la función.
     const limpio = validarTerminoIa(termino);
     const codigo = validarIdioma(idioma);
-    if (!estado().disponible) throw new ErrorApp(503, 'ia_no_disponible', NO_DISPONIBLE);
+    if (!disponibilidad().disponible) throw new ErrorApp(503, 'ia_no_disponible', NO_DISPONIBLE);
 
-    const ahoraMs = ahora();
-    const recientes = ventanaUsuario(usuarioId, ahoraMs);
-    if (recientes.length >= LIMITE_POR_USUARIO_HORA) {
-      throw new ErrorApp(
-        429,
-        'limite_alcanzado',
-        'Has hecho muchas consultas de IA. Inténtalo más tarde.',
-        null,
-        { reintentoEn: reintentoDe(recientes) },
-      );
-    }
-    const hoyClave = fechaDe(ahoraMs);
-    if (contadorDia.fecha !== hoyClave) contadorDia = { fecha: hoyClave, consultas: 0 };
-    if (contadorDia.consultas >= LIMITE_GLOBAL_DIA) {
+    // Reserva atómica en Supabase. Se cuenta antes de llamar: también protege la cuota cuando una llamada falla.
+    const reserva = await ejecutarCuota(() => cuota.reservar());
+    if (!reserva.permitida) {
+      if (reserva.motivo === 'limite_usuario') {
+        throw new ErrorApp(429, 'limite_alcanzado', 'Has hecho muchas consultas de IA. Inténtalo más tarde.', null, { reintentoEn: reserva.reintentoEn });
+      }
       throw new ErrorApp(429, 'limite_alcanzado', 'La consulta de IA alcanzó su límite de hoy. Inténtalo mañana.');
     }
-
-    // Se cuenta antes de llamar: también protege la cuota cuando una llamada falla.
-    recientes.push(ahoraMs);
-    consultasPorUsuario.set(usuarioId, recientes);
-    contadorDia.consultas += 1;
 
     let respuesta;
     try {

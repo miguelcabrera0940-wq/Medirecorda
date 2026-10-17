@@ -2,6 +2,7 @@
 // aislamiento por usuario (como RLS), historial congelado, tomas sin duplicados y hora real inmutable.
 // No es almacenamiento real: los datos se pierden al terminar el proceso y el servidor no lo usa en producción.
 import { randomUUID } from 'node:crypto';
+import { crearCuotaPrueba } from './cuota-prueba.js';
 
 const sumarDias = (fecha, dias) => {
   const resultado = new Date(`${fecha}T00:00:00Z`);
@@ -16,11 +17,15 @@ function* diasEntre(desde, hasta) {
   for (let fecha = desde; fecha <= hasta; fecha = sumarDias(fecha, 1)) yield fecha;
 }
 
+// Solo para pruebas: el manejador ya verificó la firma del token; aquí basta leer el identificador de la carga.
+const usuarioDelToken = (token) => JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')).sub;
+
 // roles: { usuarioId: 'usuario' | 'administrador' }. Sin entrada, el usuario es 'usuario'.
 export function crearRepositorioPrueba({ hoy = '2026-10-15', ahora = () => new Date('2026-10-15T10:00:00Z'), roles = {} } = {}) {
   const medicamentos = new Map();
   const tomas = new Map();
   const claves = new Set(); // medicamentoId|fecha|hora: equivale al índice único parcial.
+  const cuotas = crearCuotaPrueba({ ahora });
 
   const activos = (usuarioId) =>
     [...medicamentos.values()].filter((m) => m.usuarioId === usuarioId && !m.eliminadoEn);
@@ -186,9 +191,9 @@ export function crearRepositorioPrueba({ hoy = '2026-10-15', ahora = () => new D
       },
     },
 
-    // El repositorio de prueba no usa tokens: devuelve el mismo objeto para cualquier usuario.
-    paraToken() {
-      return repositorio;
+    // Los datos son compartidos; solo la cuota de IA se liga al usuario del token.
+    paraToken(token) {
+      return { ...repositorio, ia: cuotas.paraUsuario(usuarioDelToken(token)) };
     },
 
     // Acceso directo para preparar escenarios de prueba (p. ej. un medicamento con desde en el pasado).

@@ -2,6 +2,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearClienteGemini, sanearDiagnostico } from '../src/integraciones/gemini.js';
+import { cuotaLibre } from './cuota-prueba.js';
+
+const cuota = cuotaLibre();
 
 const CLAVE = 'clave-ficticia-no-real-000';
 
@@ -28,7 +31,7 @@ describe('diagnóstico de Gemini en consola', () => {
       modelo: 'gemini-2.5-flash-lite',
       fetch: fetchQueResponde(404, { error: { code: 404, status: 'NOT_FOUND', message: 'models/gemini-2.5-flash-lite is not found for API version v1beta' } }),
     });
-    const salida = await capturarConsola(() => cliente.explicar('u1', 'analgésico', 'es-MX').catch(() => {}));
+    const salida = await capturarConsola(() => cliente.explicar('analgésico', 'es-MX', cuota).catch(() => {}));
     assert.match(salida, /\[gemini\] HTTP 404 código=404 estado=NOT_FOUND mensaje=models\/gemini-2\.5-flash-lite is not found/);
   });
 
@@ -38,7 +41,7 @@ describe('diagnóstico de Gemini en consola', () => {
       modelo: 'gemini-2.5-flash-lite',
       fetch: fetchQueResponde(403, { error: { code: 403, status: 'PERMISSION_DENIED', message: `API key ${CLAVE} is not valid` } }),
     });
-    const salida = await capturarConsola(() => cliente.explicar('u1', 'analgésico', 'es-MX').catch(() => {}));
+    const salida = await capturarConsola(() => cliente.explicar('analgésico', 'es-MX', cuota).catch(() => {}));
     assert.match(salida, /HTTP 403/);
     assert.ok(!salida.includes(CLAVE));
     assert.match(salida, /\[clave\]/);
@@ -51,7 +54,7 @@ describe('diagnóstico de Gemini en consola', () => {
       modelo: 'gemini-2.5-flash-lite',
       fetch: fetchQueResponde(400, { error: { code: 400, status: 'INVALID_ARGUMENT', message: `ver https://generativelanguage.googleapis.com/v1beta ${largo}` } }),
     });
-    const salida = await capturarConsola(() => cliente.explicar('u1', 'analgésico', 'es-MX').catch(() => {}));
+    const salida = await capturarConsola(() => cliente.explicar('analgésico', 'es-MX', cuota).catch(() => {}));
     assert.doesNotMatch(salida, /https?:\/\//);
     assert.match(salida, /\[url\]/);
     assert.ok(salida.length < 400, 'el mensaje registrado debe ser corto');
@@ -63,7 +66,7 @@ describe('diagnóstico de Gemini en consola', () => {
       modelo: 'gemini-2.5-flash-lite',
       fetch: async () => new Response('<html>error</html>', { status: 502 }),
     });
-    const salida = await capturarConsola(() => cliente.explicar('u1', 'analgésico', 'es-MX').catch(() => {}));
+    const salida = await capturarConsola(() => cliente.explicar('analgésico', 'es-MX', cuota).catch(() => {}));
     assert.match(salida, /HTTP 502 código=- estado=- mensaje=-/);
   });
 
@@ -76,7 +79,7 @@ describe('diagnóstico de Gemini en consola', () => {
         throw e;
       },
     });
-    const salida = await capturarConsola(() => cliente.explicar('u1', 'analgésico', 'es-MX').catch(() => {}));
+    const salida = await capturarConsola(() => cliente.explicar('analgésico', 'es-MX', cuota).catch(() => {}));
     assert.match(salida, /fallo de conexión: TypeError/);
     assert.ok(!salida.includes(CLAVE));
   });
@@ -87,8 +90,8 @@ describe('diagnóstico de Gemini en consola', () => {
       modelo: 'gemini-2.5-flash-lite',
       fetch: fetchQueResponde(404, { error: { code: 404, message: 'no encontrado' } }),
     });
-    const error = await capturarConsola(() => cliente.explicar('u1', 'analgésico', 'es-MX').catch((e) => e)).then(() =>
-      cliente.explicar('u1', 'analgésico', 'es-MX').catch((e) => e),
+    const error = await capturarConsola(() => cliente.explicar('analgésico', 'es-MX', cuota).catch((e) => e)).then(() =>
+      cliente.explicar('analgésico', 'es-MX', cuota).catch((e) => e),
     );
     assert.equal(error.estado, 503);
     assert.equal(error.codigo, 'ia_no_disponible');

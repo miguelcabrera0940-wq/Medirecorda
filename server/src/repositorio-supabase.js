@@ -14,6 +14,9 @@
 //   perfil.obtener(usuarioId)                       -> { id, nombre, rol, zonaHoraria } | null (RLS: solo el propio)
 //   admin.resumen()                                 -> { usuariosTotal, administradores, usuariosNuevos7Dias }
 //       Solo cifras agregadas (rpc resumen_sistema). La base de datos rechaza a quien no sea administrador.
+//   ia.reservar()                                   -> { permitida, motivo?, restantes?, reintentoEn? } (rpc reservar_consulta_ia, atómica)
+//   ia.estado()                                     -> { restantes, reintentoEn, diarioAgotado } (rpc estado_cuota_ia)
+//       Cuota de IA compartida entre instancias. Cada función usa auth.uid() del token: nadie toca la cuota de otro.
 import { ErrorApp } from './errores.js';
 
 const TIMEOUT_MS = 10_000;
@@ -245,7 +248,12 @@ export function crearRepositorioSupabase({ urlApi, claveAnon, fetch: fetchFn = g
       },
     };
 
-    return { medicamentos, tomas, perfil, admin };
+    const ia = {
+      reservar: () => rpc('reservar_consulta_ia', {}),
+      estado: () => rpc('estado_cuota_ia', {}),
+    };
+
+    return { medicamentos, tomas, perfil, admin, ia };
   }
 
   return { paraToken };

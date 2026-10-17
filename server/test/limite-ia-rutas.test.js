@@ -25,7 +25,7 @@ function montar() {
     throw new Error('no simulado');
   };
   const manejar = crearManejador({
-    repositorio: crearRepositorioPrueba(),
+    repositorio: crearRepositorioPrueba({ ahora: () => new Date(t) }),
     verificarToken: crearVerificadorJwt({ secreto: SECRETO_PRUEBA, emisor: EMISOR_PRUEBA }),
     externos: crearExternos({ geminiApiKey: 'clave-ficticia', fetch, ahora: () => t }),
   });
