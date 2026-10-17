@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+/* Tokens: cambian con la clase .dark en <html>; el modo lo decide el botón manual. */
+@theme {
+  --font-sans: "Instrument Sans", system-ui, sans-serif;
+  --color-papel: var(--papel);
+  --color-tarjeta: var(--tarjeta);
+  --color-linea: var(--linea);
+  --color-tinta: var(--tinta);
+  --color-muted: var(--muted);
+  --color-acento: var(--acento);
+  --color-tomado: var(--tomado);
+  --color-pendiente: var(--pendiente);
+  --color-omitido: var(--omitido);
+}
+
+:root {
+  --papel: #f4f7f5;
+  --tarjeta: #ffffff;
+  --linea: #dce6e1;
+  --tinta: #14313a;
+  --muted: #5e7379;
+  --acento: #2f8f83;
+  --tomado: #23705f;
+  --pendiente: #8a5a12;
+  --omitido: #a23c27;
+  color-scheme: light;
+}
+
+.dark {
+  --papel: #0e1a1e;
+  --tarjeta: #1b2b31;
+  --linea: #2c414a;
+  --tinta: #e8f1ef;
+  --muted: #9fb4ba;
+  --acento: #5cc2b2;
+  --tomado: #7fd6c2;
+  --pendiente: #e8b46a;
+  --omitido: #f0a08c;
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--papel);
+  color: var(--tinta);
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+/* Ajustes de accesibilidad: rem escala todo el texto de Tailwind. */
+.texto-grande {
+  font-size: 112.5%;
+}
+
+.reducir-animaciones *,
+.reducir-animaciones *::before,
+.reducir-animaciones *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

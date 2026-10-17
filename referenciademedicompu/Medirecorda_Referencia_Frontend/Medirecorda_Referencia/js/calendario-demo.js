@@ -1,0 +1,1 @@
+const w=document.querySelector('#week');for(let i=0;i<35;i++){const n=i-2;const d=document.createElement('div');d.className='day'+(n===14?' selected':'');d.innerHTML=(n>0&&n<=31?n:'')+(n>0&&n<=31&&n%3===2?'<div class="pill"></div>':'')+(n>0&&n<=31&&n%4===0?'<div class="pill blue"></div>':'');w.appendChild(d)}
