@@ -9,6 +9,9 @@ import {
   respuestaEnIdioma,
   validarIdioma,
 } from '../src/integraciones/gemini.js';
+import { cuotaLibre } from './cuota-prueba.js';
+
+const cuota = cuotaLibre();
 
 const CODIGOS = ['es-MX', 'en', 'fr', 'pt', 'de', 'ja'];
 const respuesta = (texto) => ({ cuerpo: { candidates: [{ content: { parts: [{ text: texto }] } }] } });
@@ -44,7 +47,7 @@ describe('lista cerrada de idiomas', () => {
   it('un idioma no permitido no llega a Gemini ni gasta cuota', async () => {
     const { fetch, peticiones } = fetchFalso(respuesta('x'));
     const cliente = crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch });
-    await assert.rejects(cliente.explicar('u1', 'analgésico', 'it'), (e) => e.estado === 400);
+    await assert.rejects(cliente.explicar('analgésico', 'it', cuota), (e) => e.estado === 400);
     assert.equal(peticiones.length, 0);
   });
 });
@@ -75,7 +78,7 @@ describe('instrucciones: idioma exclusivo, breves y sin consejo médico', () => 
 
   it('el idioma elegido llega en la instrucción de sistema, no en el término', async () => {
     const { fetch, peticiones } = fetchFalso(respuesta('Une explication simple.'));
-    await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('u1', 'painkiller', 'fr');
+    await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('painkiller', 'fr', cuota);
     const cuerpo = JSON.parse(peticiones[0].opciones.body);
     assert.match(cuerpo.systemInstruction.parts[0].text, /French \(fr\)/);
     assert.equal(cuerpo.contents[0].parts[0].text, 'Term: "painkiller"');
@@ -83,7 +86,7 @@ describe('instrucciones: idioma exclusivo, breves y sin consejo médico', () => 
 
   it('el término y el idioma son lo único que sale; ningún dato del usuario', async () => {
     const { fetch, peticiones } = fetchFalso(respuesta('Ein Schmerzmittel.'));
-    await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('usuario-privado-7', 'analgesic', 'de');
+    await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('analgesic', 'de', cuota);
     assert.doesNotMatch(peticiones[0].opciones.body, /usuario-privado-7/);
   });
 });
@@ -91,7 +94,7 @@ describe('instrucciones: idioma exclusivo, breves y sin consejo médico', () => 
 describe('respuestas en el idioma elegido', () => {
   it('una respuesta en inglés se rechaza cuando se pidió español', async () => {
     const { fetch } = fetchFalso(respuesta('An analgesic is a drug that relieves pain. It is used to treat the symptoms of many conditions.'));
-    const error = await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('u1', 'analgesic', 'es-MX').catch((e) => e);
+    const error = await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('analgesic', 'es-MX', cuota).catch((e) => e);
     assert.equal(error.estado, 503);
     assert.match(error.message, /idioma seleccionado/);
     assert.doesNotMatch(error.message, /analgesic|relieves/);
@@ -99,36 +102,36 @@ describe('respuestas en el idioma elegido', () => {
 
   it('una respuesta en español se acepta cuando se pidió español', async () => {
     const { fetch } = fetchFalso(respuesta('Un analgésico es un medicamento que alivia el dolor.'));
-    const r = await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('u1', 'analgésico', 'es-MX');
+    const r = await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('analgésico', 'es-MX', cuota);
     assert.equal(r.idioma, 'es-MX');
     assert.equal(r.texto, 'Un analgésico es un medicamento que alivia el dolor.');
   });
 
   it('una respuesta en inglés se rechaza cuando se pidió francés', async () => {
     const { fetch } = fetchFalso(respuesta('An analgesic is a drug that is used to relieve pain in the body.'));
-    await assert.rejects(crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('u1', 'analgésique', 'fr'), (e) => e.estado === 503);
+    await assert.rejects(crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('analgésique', 'fr', cuota), (e) => e.estado === 503);
   });
 
   it('una respuesta en francés se acepta cuando se pidió francés', async () => {
     const { fetch } = fetchFalso(respuesta('Un analgésique est un médicament qui soulage la douleur dans le corps.'));
-    const r = await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('u1', 'analgésique', 'fr');
+    const r = await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('analgésique', 'fr', cuota);
     assert.equal(r.idioma, 'fr');
   });
 
   it('una respuesta en japonés se acepta cuando se pidió japonés', async () => {
     const { fetch } = fetchFalso(respuesta('鎮痛薬は、体の痛みをやわらげるお薬です。'));
-    const r = await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('u1', 'analgesic', 'ja');
+    const r = await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('analgesic', 'ja', cuota);
     assert.equal(r.idioma, 'ja');
   });
 
   it('una respuesta en inglés se rechaza cuando se pidió japonés', async () => {
     const { fetch } = fetchFalso(respuesta('An analgesic is a drug that is used to relieve pain in the body.'));
-    await assert.rejects(crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('u1', 'analgesic', 'ja'), (e) => e.estado === 503);
+    await assert.rejects(crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('analgesic', 'ja', cuota), (e) => e.estado === 503);
   });
 
   it('el aviso llega en el idioma elegido', async () => {
     const { fetch } = fetchFalso(respuesta('Ein Schmerzmittel lindert Schmerzen.'));
-    const r = await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('u1', 'analgesic', 'de');
+    const r = await crearClienteGemini({ apiKey: 'k', modelo: 'm', fetch }).explicar('analgesic', 'de', cuota);
     assert.match(r.aviso, /keine medizinische Beratung/);
   });
 });

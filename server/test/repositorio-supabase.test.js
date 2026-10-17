@@ -270,3 +270,46 @@ describe('roles en el repositorio de Supabase', () => {
     await assert.rejects(repo(fetch).admin.resumen(), (e) => e.estado === 403 && e.codigo === 'no_autorizado');
   });
 });
+
+describe('cuota de IA (RPC reservar_consulta_ia y estado_cuota_ia)', () => {
+  it('reservar llama a la RPC con el token del usuario y la clave pública, sin parámetros de identidad', async () => {
+    const { fetch, peticiones } = fetchFalso({
+      'POST /rest/v1/rpc/reservar_consulta_ia': { cuerpo: { permitida: true, restantes: 4 } },
+    });
+    const r = await repo(fetch).ia.reservar();
+    assert.equal(peticiones[0].metodo, 'POST');
+    assert.equal(peticiones[0].cabeceras.authorization, `Bearer ${TOKEN}`);
+    assert.equal(peticiones[0].cabeceras.apikey, CLAVE_ANON);
+    assert.deepEqual(peticiones[0].cuerpo, {});
+    assert.deepEqual(r, { permitida: true, restantes: 4 });
+  });
+
+  it('reservar devuelve el motivo y el momento de reintento tal cual los calcula la base de datos', async () => {
+    const reintentoEn = '2026-10-16T13:00:00.000Z';
+    const { fetch } = fetchFalso({
+      'POST /rest/v1/rpc/reservar_consulta_ia': { cuerpo: { permitida: false, motivo: 'limite_usuario', reintentoEn } },
+    });
+    assert.deepEqual(await repo(fetch).ia.reservar(), { permitida: false, motivo: 'limite_usuario', reintentoEn });
+  });
+
+  it('estado llama a estado_cuota_ia con el token del usuario', async () => {
+    const { fetch, peticiones } = fetchFalso({
+      'POST /rest/v1/rpc/estado_cuota_ia': { cuerpo: { restantes: 5, reintentoEn: null, diarioAgotado: false } },
+    });
+    const e = await repo(fetch).ia.estado();
+    assert.equal(peticiones[0].cabeceras.authorization, `Bearer ${TOKEN}`);
+    assert.deepEqual(e, { restantes: 5, reintentoEn: null, diarioAgotado: false });
+  });
+
+  it('si la RPC no responde, la cuota falla con un error sin detalles de red', async () => {
+    const { fetch } = fetchFalso({ 'POST /rest/v1/rpc/reservar_consulta_ia': new Error('red caída') });
+    await assert.rejects(repo(fetch).ia.reservar(), (e) => e.estado === 503 && e.codigo === 'servicio_no_disponible' && !/red caída/.test(e.message));
+  });
+
+  it('un acceso denegado a la RPC (sin sesión) no se expone como detalle de base de datos', async () => {
+    const { fetch } = fetchFalso({
+      'POST /rest/v1/rpc/reservar_consulta_ia': { status: 401, cuerpo: { code: 'PGRST301', message: 'JWT expired' } },
+    });
+    await assert.rejects(repo(fetch).ia.reservar(), (e) => e.estado === 401 && !/JWT/.test(e.message));
+  });
+});

@@ -2,6 +2,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearClienteGemini, MODELO_PREDETERMINADO } from '../src/integraciones/gemini.js';
+import { cuotaLibre } from './cuota-prueba.js';
+
+const cuota = cuotaLibre();
 import { leerConfiguracion } from '../src/config.js';
 import { crearExternos } from '../src/externos.js';
 
@@ -33,7 +36,7 @@ describe('modelo por defecto', () => {
 
   it('la URL de generación usa el modelo nuevo sin cambiar el formato', async () => {
     const { fetch, peticiones } = capturar();
-    await crearClienteGemini({ apiKey: 'k', fetch }).explicar('u1', 'analgésico', 'es-MX');
+    await crearClienteGemini({ apiKey: 'k', fetch }).explicar('analgésico', 'es-MX', cuota);
     assert.match(peticiones[0].url, /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.5-flash-lite:generateContent$/);
   });
 });
@@ -41,7 +44,7 @@ describe('modelo por defecto', () => {
 describe('modelo retirado', () => {
   it('si se configura gemini-2.5-flash-lite, se usa el predeterminado y se avisa en consola', async () => {
     const { fetch, peticiones } = capturar();
-    const avisos = await consola(() => crearClienteGemini({ apiKey: 'k', modelo: 'gemini-2.5-flash-lite', fetch }).explicar('u1', 'analgésico', 'es-MX'));
+    const avisos = await consola(() => crearClienteGemini({ apiKey: 'k', modelo: 'gemini-2.5-flash-lite', fetch }).explicar('analgésico', 'es-MX', cuota));
     assert.match(peticiones[0].url, /models\/gemini-3\.5-flash-lite:generateContent$/);
     assert.equal(avisos.length, 1);
     assert.match(avisos[0], /ya no está disponible para nuevos usuarios/);
@@ -49,7 +52,7 @@ describe('modelo retirado', () => {
 
   it('un modelo distinto no se reemplaza ni genera aviso', async () => {
     const { fetch, peticiones } = capturar();
-    const avisos = await consola(() => crearClienteGemini({ apiKey: 'k', modelo: 'gemini-otro', fetch }).explicar('u1', 'analgésico', 'es-MX'));
+    const avisos = await consola(() => crearClienteGemini({ apiKey: 'k', modelo: 'gemini-otro', fetch }).explicar('analgésico', 'es-MX', cuota));
     assert.match(peticiones[0].url, /models\/gemini-otro:generateContent$/);
     assert.equal(avisos.length, 0);
   });
@@ -57,7 +60,7 @@ describe('modelo retirado', () => {
   it('el ensamblado con el modelo retirado también usa el predeterminado', async () => {
     const { fetch, peticiones } = capturar();
     const externos = crearExternos({ geminiApiKey: 'k', geminiModelo: 'gemini-2.5-flash-lite', fetch });
-    await consola(() => externos.ia.explicar('u1', 'analgésico', 'es-MX'));
+    await consola(() => externos.ia.explicar('analgésico', 'es-MX', cuota));
     assert.match(peticiones[0].url, /gemini-3\.5-flash-lite/);
   });
 });
@@ -65,7 +68,7 @@ describe('modelo retirado', () => {
 describe('razonamiento mínimo y límite de tokens', () => {
   it('pide razonamiento minimal con el nombre de campo de la API REST (camelCase)', async () => {
     const { fetch, peticiones } = capturar();
-    await crearClienteGemini({ apiKey: 'k', fetch }).explicar('u1', 'analgésico', 'es-MX');
+    await crearClienteGemini({ apiKey: 'k', fetch }).explicar('analgésico', 'es-MX', cuota);
     const cuerpo = JSON.parse(peticiones[0].opciones.body);
     assert.deepEqual(cuerpo.generationConfig, { maxOutputTokens: 1024, temperature: 0.2, thinkingConfig: { thinkingLevel: 'minimal' } });
     assert.ok(cuerpo.systemInstruction, 'systemInstruction en camelCase');
@@ -74,7 +77,7 @@ describe('razonamiento mínimo y límite de tokens', () => {
 
   it('mantiene las restricciones de tamaño de salida de la aplicación', async () => {
     const largo = new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'a'.repeat(5000) }] } }] }), { status: 200 });
-    const r = await crearClienteGemini({ apiKey: 'k', fetch: async () => largo }).explicar('u1', 'analgésico', 'es-MX');
+    const r = await crearClienteGemini({ apiKey: 'k', fetch: async () => largo }).explicar('analgésico', 'es-MX', cuota);
     assert.equal(r.texto.length, 1200);
   });
 });
